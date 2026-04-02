@@ -4,6 +4,7 @@ result-*
 .direnv/
 .venv/
 node_modules/
+*.qcow2
 
 # Secrets (if you decide not to use sops-nix)
 secrets.nix

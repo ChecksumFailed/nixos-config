@@ -1,6 +1,5 @@
 # NixOS Config
-
-Modular NixOS flake configuration for **WhoDey01**.
+My first attempt at NixOS.  Built using a combination of Gemini, Copilot, and google-fu
 
 ## Stack
 
