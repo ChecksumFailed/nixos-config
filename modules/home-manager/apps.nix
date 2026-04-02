@@ -13,7 +13,7 @@
     teams-for-linux
     
     # Tools
-    vscode
+    zed-editor
     obsidian
     kitty
     foot
