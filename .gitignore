@@ -1,0 +1,11 @@
+# Nix
+result
+result-*
+.direnv/
+.venv/
+node_modules/
+
+# Secrets (if you decide not to use sops-nix)
+secrets.nix
+*.age
+*.ssh
