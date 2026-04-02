@@ -8,7 +8,6 @@
     ../../modules/nixos/desktop.nix
     ../../modules/nixos/gaming.nix
     ../../modules/nixos/services.nix
-    ../../modules/nixos/persistence.nix
   ];
 
   networking.hostName = "WhoDey01";

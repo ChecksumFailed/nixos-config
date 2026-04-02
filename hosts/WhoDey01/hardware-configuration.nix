@@ -29,12 +29,10 @@
     options = [ "subvol=@nix" "compress=zstd" "noatime" ];
   };
 
-  fileSystems."/persist" = {
-    device = "/dev/disk/by-label/nixos";
-    fsType = "btrfs";
-    options = [ "subvol=@persist" "compress=zstd" "noatime" ];
-    neededForBoot = true;
-  };
+  # Persistence removed: /persist subvolume is not mounted anymore.
+  # Previously this block mounted a @persist subvolume for system-level persistent data.
+  # The system will no longer rely on /persist; persistent paths should be handled
+  # explicitly via other mechanisms if needed.
 
   fileSystems."/boot" = {
     device = "/dev/disk/by-label/boot";
