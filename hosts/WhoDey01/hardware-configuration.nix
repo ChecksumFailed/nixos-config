@@ -12,19 +12,19 @@
 
   # Btrfs Subvolume Layout
   fileSystems."/" = {
-    device = "/dev/disk/by-label/nixos";
+    device = "/dev/disk/by-uuid/ea08e3ac-27b5-4825-9fad-94421b4855ac";
     fsType = "btrfs";
     options = [ "subvol=@root" "compress=zstd" "noatime" ];
   };
 
   fileSystems."/home" = {
-    device = "/dev/disk/by-label/nixos";
+    device = "/dev/disk/by-uuid/ea08e3ac-27b5-4825-9fad-94421b4855ac";
     fsType = "btrfs";
     options = [ "subvol=@home" "compress=zstd" "noatime" ];
   };
 
   fileSystems."/nix" = {
-    device = "/dev/disk/by-label/nixos";
+    device = "/dev/disk/by-uuid/ea08e3ac-27b5-4825-9fad-94421b4855ac";
     fsType = "btrfs";
     options = [ "subvol=@nix" "compress=zstd" "noatime" ];
   };
@@ -35,20 +35,20 @@
   # explicitly via other mechanisms if needed.
 
   fileSystems."/boot" = {
-    device = "/dev/disk/by-label/boot";
+    device = "/dev/disk/by-uuid/0367-C1BF";
     fsType = "vfat";
     options = [ "fmask=0022" "dmask=0022" ];
   };
 
   fileSystems."/data" = {
-    device = "/dev/disk/by-label/data";
+    device = "/dev/disk/ea08e3ac-27b5-4825-9fad-94421b4855ac";
     fsType = "btrfs";
     options = [ "subvol=@data" "compress=zstd" "noatime" ];
   }
 
   # Your existing Brave subvolume preservation
 #  fileSystems."/home/ben/.config/BraveSoftware/Brave-Browser/Default/Login Data-journal" = {
- #   device = "/dev/disk/by-label/nixos"; # Assuming it's on the same disk
+ #   device = "/dev/disk/by-uuid/ea08e3ac-27b5-4825-9fad-94421b4855ac"; # Assuming it's on the same disk
  #   fsType = "btrfs";
  3   options = [ "subvol=@.config/BraveSoftware/Brave-Browser/Default/Login Data-journal" "compress=zstd" "noatime" ];
  # };
