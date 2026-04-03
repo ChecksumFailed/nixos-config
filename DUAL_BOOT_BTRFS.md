@@ -1,0 +1,291 @@
+# Dual-boot NixOS + Arch on a single Btrfs partition (with separate homes)
+
+This document explains a safe, repeatable workflow to install NixOS alongside an existing Arch Linux on the same Btrfs partition while keeping separate home subvolumes for each OS. It covers subvolume layout, installation steps, configuring Limine to boot NixOS, secure-boot notes, and recommended practices for sharing data.
+
+Important safety note
+- Back up any important data before you start (external disk, `rsync -aHAX`, or `btrfs send` to another device).
+- Do not use `dd` to create a "volume" for NixOS. With Btrfs you create subvolumes — lightweight, safe, and reversible metadata operations.
+- Replace placeholders (e.g. `YOUR-BTRFS-UUID`) with values you discover on your machine using `lsblk`, `blkid`, and `btrfs subvolume list`.
+
+Table of contents
+- 1) Goals and assumptions
+- 2) Overview of the approach
+- 3) Inspect your current layout
+- 4) Create new NixOS subvolumes (non-destructive)
+- 5) Mount subvolumes for installation
+- 6) Put your flake on the target and run the installer
+- 7) Limine: add a boot entry for NixOS
+- 8) Kernel / initrd handling and upgrades
+- 9) Secure Boot considerations
+- 10) Sharing data and separate-home recommendations
+- 11) Troubleshooting & verification
+- 12) Final checklist
+
+---
+
+## 1) Goals and assumptions
+
+- Keep your Arch install and its subvolumes intact.
+- Create new subvolumes for NixOS root and NixOS home (separate from Arch home).
+- Optionally create a shared `@data` subvolume for documents/games/media (do not share dotfiles).
+- Use Limine (already present) as the boot manager and add an entry for NixOS that points to kernel + initrd on the ESP and uses `rootflags=subvol=@nixos`.
+
+---
+
+## 2) Overview
+
+1. Inspect existing Btrfs partition and subvolumes.
+2. Create NixOS subvolumes (e.g. `@nixos`, `@nixos-home`, `@nix`, `@data`) — non-destructive.
+3. Mount the NixOS subvolumes and the EFI system partition (ESP) under `/mnt` for installer.
+4. Copy/clone your flake into `/mnt/etc/nixos` and run `nixos-install --flake /mnt/etc/nixos#WhoDey01`.
+5. Copy kernel/initrd to the ESP (or have NixOS write them there) and add a Limine entry referencing `root=/dev/disk/by-uuid/<uuid> rootflags=subvol=@nixos`.
+6. Reboot and pick NixOS from Limine menu.
+
+---
+
+## 3) Inspect your current layout
+
+Find the Btrfs partition and discover current subvolumes and the ESP. Run these on a live environment.
+
+```/dev/null/commands.sh#L1-8
+# Discover block devices and filesystems
+lsblk -f
+blkid
+
+# Mount the raw Btrfs partition read-only and list subvolumes
+mount -o ro /dev/sdXN /mnt          # replace /dev/sdXN with your btrfs partition device
+btrfs subvolume list /mnt
+umount /mnt
+
+# Note the device/UUID for later and the names of Arch subvolumes
+```
+
+- Write down:
+  - The Btrfs partition device and its UUID (used for `root=`).
+  - The ESP device (FAT32) and its UUID.
+  - Current subvolumes (do not remove them unless you have backups).
+
+---
+
+## 4) Create NixOS subvolumes (non-destructive)
+
+These operations create metadata-only subvolumes and won't overwrite existing ones.
+
+```/dev/null/commands.sh#L1-14
+# Mount the raw btrfs partition RW (replace YOUR-BTRFS-UUID)
+mount /dev/disk/by-uuid/YOUR-BTRFS-UUID /mnt
+
+# Create NixOS-specific subvolumes
+btrfs subvolume create /mnt/@nixos
+btrfs subvolume create /mnt/@nixos-home
+btrfs subvolume create /mnt/@nix
+
+# Optional: shared data subvolume (for large files, media, games)
+btrfs subvolume create /mnt/@data
+
+# Optional: blank template for impermanence (if desired)
+# btrfs subvolume create /mnt/@nixos-root-blank
+
+# Verify
+btrfs subvolume list /mnt
+umount /mnt
+```
+
+Naming guidance:
+- Use distinct names to avoid colliding with Arch's names (e.g. Arch might use `@home`). Use `@nixos-home` for NixOS home.
+
+---
+
+## 5) Mount subvolumes for installation
+
+Mount NixOS subvolumes and the ESP under `/mnt` and proceed with the install environment.
+
+```/dev/null/commands.sh#L1-20
+# Mount the NixOS root subvolume for the installer
+mount -o subvol=@nixos,compress=zstd,noatime /dev/disk/by-uuid/YOUR-BTRFS-UUID /mnt
+
+# Create and mount other points
+mkdir -p /mnt/home /mnt/nix /mnt/boot
+mount -o subvol=@nixos-home,compress=zstd,noatime /dev/disk/by-uuid/YOUR-BTRFS-UUID /mnt/home
+mount -o subvol=@nix,compress=zstd,noatime /dev/disk/by-uuid/YOUR-BTRFS-UUID /mnt/nix
+
+# Mount the EFI System Partition (ESP)
+mount /dev/disk/by-uuid/YOUR-ESP-UUID /mnt/boot
+```
+
+If you need to inspect or copy files from Arch first, mount Arch subvolumes read-only elsewhere:
+
+```/dev/null/commands.sh#L1-4
+mkdir -p /mnt/arch-root
+mount -o subvol=@,ro /dev/disk/by-uuid/YOUR-BTRFS-UUID /mnt/arch-root   # adjust subvol name
+ls /mnt/arch-root
+```
+
+---
+
+## 6) Put your flake on the target and install
+
+Clone or copy your flake into `/mnt/etc/nixos`. Recommended flow: clone into `/tmp`, inspect with `rsync -avn`, then sync.
+
+```/dev/null/commands.sh#L1-20
+# (optional) preserve the autogenerated hardware-configuration.nix
+test -f /mnt/etc/nixos/hardware-configuration.nix && mkdir -p /tmp/nix-flake/hosts/WhoDey01 && cp /mnt/etc/nixos/hardware-configuration.nix /tmp/nix-flake/hosts/WhoDey01/hardware-configuration.nix
+
+# Clone your repo into a temp location
+git clone --recurse-submodules https://github.com/YOUR-USER/YOUR-REPO.git /tmp/nixos-config
+
+# Optionally copy the preserved hardware config into the clone
+test -f /tmp/nixos-config/hosts/WhoDey01/hardware-configuration.nix || cp /mnt/etc/nixos/hardware-configuration.nix /tmp/nixos-config/hosts/WhoDey01/hardware-configuration.nix
+
+# Dry-run inspect what will be synchronized
+rsync -avn --delete /tmp/nixos-config/ /mnt/etc/nixos/
+
+# When satisfied, perform the sync
+rsync -a --delete /tmp/nixos-config/ /mnt/etc/nixos/
+chown -R root:root /mnt/etc/nixos
+
+# Install from the flake
+nixos-install --flake /mnt/etc/nixos#WhoDey01
+```
+
+If `nixos-install` fails with device/subvolume errors, edit `/mnt/etc/nixos/hosts/WhoDey01/hardware-configuration.nix` to use the correct `device = "/dev/disk/by-uuid/YOUR-BTRFS-UUID"` entries and correct `subvol` strings. Then retry.
+
+---
+
+## 7) Limine: configure a boot entry for NixOS
+
+If Limine is already present and boots Arch, add a new entry that points to the NixOS kernel/initrd on the ESP and includes `rootflags=subvol=@nixos`.
+
+### 7.1 Ensure kernel+initrd are accessible on the ESP
+
+NixOS may place kernels in `/nixos/boot` or `/boot`. Ensure the kernel and initrd referenced by Limine are present on the ESP path you will use (for example `/EFI/nixos/`).
+
+```/dev/null/commands.sh#L1-12
+# On the installed system or from live with /mnt mounted
+ls -la /mnt/boot
+ls -la /mnt/boot/nixos || true
+
+# If NixOS stores kernels under /nixos/boot, copy or link them into /mnt/boot/EFI/nixos
+mkdir -p /mnt/boot/EFI/nixos
+cp /mnt/nixos/boot/vmlinuz-* /mnt/boot/EFI/nixos/vmlinuz-linux
+cp /mnt/nixos/boot/initrd-* /mnt/boot/EFI/nixos/initrd-linux.img
+sync
+```
+
+### 7.2 Example Limine entry
+
+Add an entry to your Limine config (typically on the ESP). Replace placeholders with actual UUIDs and paths.
+
+```/dev/null/limine.cfg#L1-16
+:ENTRY: "NixOS (subvol=@nixos)"
+    PATH: /EFI/nixos/vmlinuz-linux
+    INITRD: /EFI/nixos/initrd-linux.img
+    CMDLINE: "root=/dev/disk/by-uuid/YOUR-BTRFS-UUID rootflags=subvol=@nixos rw"
+:END:
+```
+
+Notes:
+- `PATH` and `INITRD` are relative to the ESP root.
+- `CMDLINE` must include the partition UUID and `rootflags=subvol=@nixos` so the kernel mounts the intended subvolume.
+- If you use LUKS, the initrd must unlock your LUKS device and then the `root=` usually uses the mapped device (e.g., `/dev/mapper/cryptroot`).
+
+---
+
+## 8) Kernel / initrd handling and upgrades
+
+Limine won't automatically update the PATH/INITRD — when NixOS upgrades the kernel/initrd you must ensure the files referenced by Limine are updated.
+
+Two common approaches:
+1. Copy the kernel/initrd you want to a stable ESP path after each `nixos-rebuild` (script or manual).
+2. Use a small activation script to copy the latest Nix kernel/initrd into the ESP path.
+
+Example helper (run after `nixos-rebuild` on the installed system):
+
+```/dev/null/commands.sh#L1-12
+# Copy latest kernel/initrd to ESP path (example)
+latest_kernel=$(ls /nix/store/*-linux-*/vmlinuz-* 2>/dev/null | tail -n1)
+latest_initrd=$(ls /nix/store/*-linux-*/initrd-* 2>/dev/null | tail -n1)
+cp "$latest_kernel" /boot/EFI/nixos/vmlinuz-linux
+cp "$latest_initrd" /boot/EFI/nixos/initrd-linux.img
+sync
+```
+
+Consider adding this step to your post-rebuild workflow or automating it in NixOS activation scripts.
+
+---
+
+## 9) Secure Boot considerations
+
+- If Secure Boot is enabled, unsigned EFI binaries or unsigned kernel/initrd may be rejected by the firmware.
+- Easiest path for testing: disable Secure Boot for the machine/VM.
+- For a secure setup: use a signed shim (Microsoft-signed) + signed bootloader or enroll your own keys and sign binaries. This is advanced and requires additional steps (install `shim`, sign kernels, manage keys).
+
+If you encounter "Access Denied" from OVMF/UEFI, it usually indicates Secure Boot is blocking an unsigned binary.
+
+---
+
+## 10) Sharing data and separate-home recommendations
+
+- Keep per-OS `~/.config` and dotfiles separate to avoid conflicts.
+- Create a shared `@data` subvolume for documents, media, game libraries, and mount it at `/data` on each OS.
+- From each user's home, create symlinks (or bind mounts) to selective folders in `/data` (e.g., `~/Documents`, `~/Games`).
+- Keep UIDs the same across OSes for the same user to avoid ownership issues (e.g., UID 1000 on Arch and NixOS for the same user).
+- Do NOT share `~/.config` across different OSes — dotfile incompatibilities can break desktop environments and applications.
+
+Example mount snippet for `hardware-configuration.nix` or Arch `/etc/fstab`:
+
+```/dev/null/commands.sh#L1-8
+fileSystems."/data" = {
+  device = "/dev/disk/by-uuid/YOUR-BTRFS-UUID";
+  fsType = "btrfs";
+  options = [ "subvol=@data" "compress=zstd" "noatime" ];
+};
+```
+
+---
+
+## 11) Troubleshooting & verification
+
+- If the kernel fails to find `root=/dev/disk/by-label/nixos`, use the UUID instead in Limine and `hardware-configuration.nix`. Labels can be duplicated and sometimes the initrd can't see labels early in boot.
+- To verify subvolumes and mounts:
+
+```/dev/null/commands.sh#L1-10
+# On a live system or from installed system
+lsblk -f
+blkid
+findmnt -t btrfs -o TARGET,SOURCE,FSTYPE,OPTIONS
+btrfs subvolume list /dev/disk/by-uuid/YOUR-BTRFS-UUID
+btrfs filesystem df /dev/disk/by-uuid/YOUR-BTRFS-UUID
+```
+
+- If Limine shows "No bootable option found", check:
+  - Kernel/initrd files exist on ESP path referenced by Limine.
+  - Limine config syntax and the file location are correct.
+  - Secure Boot is not blocking the ESF binaries.
+
+- If `nixos-install` fails because it cannot write to the ESP or cannot mount subvolumes:
+  - Confirm you mounted the ESP at `/mnt/boot` when running the installer.
+  - Confirm `hardware-configuration.nix` uses correct `device` and `subvol` entries.
+
+---
+
+## 12) Final quick checklist
+
+- [ ] External backup of Arch and important data taken.
+- [ ] Recorded Btrfs partition UUID and ESP UUID.
+- [ ] Created NixOS subvolumes: `@nixos`, `@nixos-home`, `@nix` (and optionally `@data`).
+- [ ] Mounted NixOS subvolumes at `/mnt` and ESP at `/mnt/boot`.
+- [ ] Cloned/synced flake into `/mnt/etc/nixos`.
+- [ ] Ran `nixos-install --flake /mnt/etc/nixos#WhoDey01`.
+- [ ] Copied kernel/initrd to `/boot/EFI/nixos/` (or confirmed NixOS did).
+- [ ] Added Limine entry pointing to `/EFI/nixos/vmlinuz-linux` and `initrd-linux.img` with `rootflags=subvol=@nixos`.
+- [ ] Tested boot and validated NixOS runs.
+- [ ] Configured `/data` subvolume and separate homes.
+
+---
+
+If you want, I can:
+- Generate exact copy/paste commands for your machine (fill in `YOUR-BTRFS-UUID` and `YOUR-ESP-UUID`) if you paste the outputs of `lsblk -f`, `blkid`, and `btrfs subvolume list /path`.
+- Produce a ready-to-drop `limine.cfg` snippet and a small activation script to copy kernels into `EFI/nixos/` after each rebuild.
+
+Which would you like next: (A) exact commands with your UUIDs filled in, or (B) a small post-rebuild script and limine.cfg snippet added to your repo for easier maintenance?

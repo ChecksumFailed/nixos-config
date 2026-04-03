@@ -40,6 +40,12 @@
     options = [ "fmask=0022" "dmask=0022" ];
   };
 
+  fileSystems."/data" = {
+    device = "/dev/disk/by-label/data";
+    fsType = "btrfs";
+    options = [ "subvol=@data" "compress=zstd" "noatime" ];
+  }
+
   # Your existing Brave subvolume preservation
 #  fileSystems."/home/ben/.config/BraveSoftware/Brave-Browser/Default/Login Data-journal" = {
  #   device = "/dev/disk/by-label/nixos"; # Assuming it's on the same disk
