@@ -41,11 +41,11 @@
   };
 
   # Your existing Brave subvolume preservation
-  fileSystems."/home/ben/.config/BraveSoftware/Brave-Browser/Default/Login Data-journal" = {
-    device = "/dev/disk/by-label/nixos"; # Assuming it's on the same disk
-    fsType = "btrfs";
-    options = [ "subvol=@.config/BraveSoftware/Brave-Browser/Default/Login Data-journal" "compress=zstd" "noatime" ];
-  };
+#  fileSystems."/home/ben/.config/BraveSoftware/Brave-Browser/Default/Login Data-journal" = {
+ #   device = "/dev/disk/by-label/nixos"; # Assuming it's on the same disk
+ #   fsType = "btrfs";
+ 3   options = [ "subvol=@.config/BraveSoftware/Brave-Browser/Default/Login Data-journal" "compress=zstd" "noatime" ];
+ # };
 
   swapDevices = [ ];
 
