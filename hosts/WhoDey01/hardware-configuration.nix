@@ -14,13 +14,13 @@
   fileSystems."/" = {
     device = "/dev/disk/by-uuid/ea08e3ac-27b5-4825-9fad-94421b4855ac";
     fsType = "btrfs";
-    options = [ "subvol=@root" "compress=zstd" "noatime" ];
+    options = [ "subvol=@nixos" "compress=zstd" "noatime" ];
   };
 
   fileSystems."/home" = {
     device = "/dev/disk/by-uuid/ea08e3ac-27b5-4825-9fad-94421b4855ac";
     fsType = "btrfs";
-    options = [ "subvol=@home" "compress=zstd" "noatime" ];
+    options = [ "subvol=@nixos-home" "compress=zstd" "noatime" ];
   };
 
   fileSystems."/nix" = {
