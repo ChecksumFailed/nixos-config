@@ -31,6 +31,7 @@
   # Core Tools
   environment.systemPackages = with pkgs; [
     git
+    vim
     gh
     curl
     wget
